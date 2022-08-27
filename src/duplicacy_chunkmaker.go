@@ -26,14 +26,13 @@ type ChunkMaker struct {
 	bufferStart int
 
 	minimumReached bool
-	hashSum uint64
-	chunk *Chunk
+	hashSum        uint64
+	chunk          *Chunk
 
 	config *Config
 
 	hashOnly      bool
 	hashOnlyChunk *Chunk
-
 }
 
 // CreateChunkMaker creates a chunk maker.  'randomSeed' is used to generate the character-to-integer table needed by
@@ -173,10 +172,11 @@ func (maker *ChunkMaker) AddData(reader io.Reader, sendChunk func(*Chunk)) (int6
 				if err != nil {
 					if err != io.EOF {
 						LOG_ERROR("CHUNK_MAKER", "Failed to read %d bytes: %s", count, err.Error())
-						return 0, ""
-					} else {
-						isEOF = true
-					}
+						// By dLux: treat read errors like EOF
+						//	return 0, ""
+					} // else {
+					isEOF = true
+					// }
 				}
 				maker.bufferStart += count
 			}
@@ -210,7 +210,8 @@ func (maker *ChunkMaker) AddData(reader io.Reader, sendChunk func(*Chunk)) (int6
 
 			if err != nil && err != io.EOF {
 				LOG_ERROR("CHUNK_MAKER", "Failed to read %d bytes: %s", count, err.Error())
-				return 0, ""
+				// return 0, ""
+				err = io.EOF
 			}
 
 			maker.bufferSize += count
