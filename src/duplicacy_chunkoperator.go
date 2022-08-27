@@ -74,7 +74,7 @@ func CreateChunkOperator(config *Config, storage Storage, snapshotCache *FileSto
 		stopChannel: make(chan bool),
 
 		collectionLock: &sync.Mutex{},
-
+		startTime: time.Now().Unix(),
 		allowFailures: allowFailures,
 	}
 
@@ -489,7 +489,7 @@ func (operator *ChunkOperator) UploadChunk(threadIndex int, task ChunkTask) bool
 		chunk.VerifyID()
 	}
 
-	if task.isMetadata && operator.storage.IsCacheNeeded() {
+	if task.isMetadata && operator.snapshotCache != nil && operator.storage.IsCacheNeeded() {
 		// Save a copy to the local snapshot.
 		chunkPath, exist, _, err := operator.snapshotCache.FindChunk(threadIndex, chunkID, false)
 		if err != nil {
