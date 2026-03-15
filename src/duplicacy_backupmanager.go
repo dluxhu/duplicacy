@@ -47,6 +47,10 @@ func (manager *BackupManager) SetDryRun(dryRun bool) {
 	manager.config.dryRun = dryRun
 }
 
+func (manager *BackupManager) SetCompressionLevel(level int) {
+	manager.config.CompressionLevel = level
+}
+
 // CreateBackupManager creates a backup manager using the specified 'storage'.  'snapshotID' is a unique id to
 // identify snapshots created for this repository.  'top' is the top directory of the repository.  'password' is the
 // master key which can be nil if encryption is not enabled.
@@ -138,6 +142,8 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 
 	LOG_DEBUG("BACKUP_PARAMETERS", "top: %s, quick: %t, tag: %s", top, quickMode, tag)
 
+	manager.config.PrintCompressionLevel()
+
 	if manager.config.DataShards != 0 && manager.config.ParityShards != 0 {
 		LOG_INFO("BACKUP_ERASURECODING", "Erasure coding is enabled with %d data shards and %d parity shards",
 		         manager.config.DataShards, manager.config.ParityShards)
@@ -223,7 +229,7 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 
 	localListingChannel := make(chan *Entry)
 	remoteListingChannel := make(chan *Entry)
-	chunkOperator := CreateChunkOperator(manager.config, manager.storage, manager.snapshotCache, showStatistics, threads, false)
+	chunkOperator := CreateChunkOperator(manager.config, manager.storage, manager.snapshotCache, showStatistics, false, threads, false)
 
 	var skippedDirectories []string
 	var skippedFiles []string
@@ -301,26 +307,27 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 		if compareResult == 0  {
 			// No need to check if it is in hash mode -- in that case remote listing is nil
 			if localEntry.IsSameAs(remoteEntry) && localEntry.IsFile() {
+				if localEntry.Size > 0 {
+					localEntry.Hash = remoteEntry.Hash
+					localEntry.StartOffset = remoteEntry.StartOffset
+					localEntry.EndOffset = remoteEntry.EndOffset
+					delta := remoteEntry.StartChunk - len(localEntryList.PreservedChunkHashes)
+					if lastPreservedChunk != remoteEntry.StartChunk {
+						lastPreservedChunk = remoteEntry.StartChunk
+						localEntryList.AddPreservedChunk(remoteSnapshot.ChunkHashes[lastPreservedChunk], remoteSnapshot.ChunkLengths[lastPreservedChunk])
+					} else {
+						delta++
+					}
 
-				localEntry.Hash = remoteEntry.Hash
-				localEntry.StartOffset = remoteEntry.StartOffset
-				localEntry.EndOffset = remoteEntry.EndOffset
-				delta := remoteEntry.StartChunk - len(localEntryList.PreservedChunkHashes)
-				if lastPreservedChunk != remoteEntry.StartChunk {
-					lastPreservedChunk = remoteEntry.StartChunk
-					localEntryList.AddPreservedChunk(remoteSnapshot.ChunkHashes[lastPreservedChunk], remoteSnapshot.ChunkLengths[lastPreservedChunk])
-				} else {
-					delta++
+					for i := remoteEntry.StartChunk + 1; i <= remoteEntry.EndChunk; i++ {
+						localEntryList.AddPreservedChunk(remoteSnapshot.ChunkHashes[i], remoteSnapshot.ChunkLengths[i])
+						lastPreservedChunk = i
+					}
+
+					localEntry.StartChunk = remoteEntry.StartChunk - delta
+					localEntry.EndChunk = remoteEntry.EndChunk - delta
+					preservedFileSize += localEntry.Size
 				}
-
-				for i := remoteEntry.StartChunk + 1; i <= remoteEntry.EndChunk; i++ {
-					localEntryList.AddPreservedChunk(remoteSnapshot.ChunkHashes[i], remoteSnapshot.ChunkLengths[i])
-					lastPreservedChunk = i
-				}
-
-				localEntry.StartChunk = remoteEntry.StartChunk - delta
-				localEntry.EndChunk = remoteEntry.EndChunk - delta
-				preservedFileSize += localEntry.Size
 			} else {
 				totalModifiedFileSize += localEntry.Size
 				if localEntry.Size > 0 {
@@ -374,7 +381,7 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 	}
 
 	var once sync.Once
-	if hashMode {
+	if hashMode && !manager.config.dryRun {
 		// In case an error occurs during a hash mode backup, save the incomplete snapshot
 		RunAtError = func() {
 			once.Do(func() {
@@ -672,7 +679,7 @@ func (manager *BackupManager) Restore(top string, revision int, inPlace bool, qu
 
 	localListingChannel := make(chan *Entry)
 	remoteListingChannel := make(chan *Entry)
-	chunkOperator := CreateChunkOperator(manager.config, manager.storage, manager.snapshotCache, showStatistics, threads, false)
+	chunkOperator := CreateChunkOperator(manager.config, manager.storage, manager.snapshotCache, showStatistics, false, threads, allowFailures)
 
 	LOG_INFO("RESTORE_INDEXING", "Indexing %s", top)
 	go func() {
@@ -1047,24 +1054,24 @@ func (manager *BackupManager) UploadSnapshot(chunkOperator *ChunkOperator, top s
 
 	uploadEntryInfoFunc := func(entry *Entry) error {
 
-		delta := entry.StartChunk - len(chunkHashes) + 1
-		if entry.StartChunk != lastChunk {
-			chunkHashes = append(chunkHashes, snapshot.ChunkHashes[entry.StartChunk])
-			chunkLengths = append(chunkLengths, snapshot.ChunkLengths[entry.StartChunk])
-			delta--
-		}
+		if entry.IsFile() && entry.Size > 0 {
+			delta := entry.StartChunk - len(chunkHashes) + 1
+			if entry.StartChunk != lastChunk {
+				chunkHashes = append(chunkHashes, snapshot.ChunkHashes[entry.StartChunk])
+				chunkLengths = append(chunkLengths, snapshot.ChunkLengths[entry.StartChunk])
+				delta--
+			}
 
-		for i := entry.StartChunk + 1; i <= entry.EndChunk; i++ {
-			chunkHashes = append(chunkHashes, snapshot.ChunkHashes[i])
-			chunkLengths = append(chunkLengths, snapshot.ChunkLengths[i])
-		}
+			for i := entry.StartChunk + 1; i <= entry.EndChunk; i++ {
+				chunkHashes = append(chunkHashes, snapshot.ChunkHashes[i])
+				chunkLengths = append(chunkLengths, snapshot.ChunkLengths[i])
+			}
 
-		lastChunk = entry.EndChunk
-		entry.StartChunk -= delta
-		entry.EndChunk -= delta
+			lastChunk = entry.EndChunk
+			entry.StartChunk -= delta
+			entry.EndChunk -= delta
 
-		if entry.IsFile() {
-			delta := entry.EndChunk - entry.StartChunk
+			delta = entry.EndChunk - entry.StartChunk
 			entry.StartChunk -= lastEndChunk
 			lastEndChunk = entry.EndChunk
 			entry.EndChunk = delta
@@ -1551,7 +1558,7 @@ func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chun
 func (manager *BackupManager) CopySnapshots(otherManager *BackupManager, snapshotID string,
 	revisionsToBeCopied []int, uploadingThreads int, downloadingThreads int) bool {
 
-	if !manager.config.IsCompatiableWith(otherManager.config) {
+	if !manager.config.IsCompatibleWith(otherManager.config) {
 		LOG_ERROR("CONFIG_INCOMPATIBLE", "Two storages are not compatible for the copy operation")
 		return false
 	}
@@ -1714,13 +1721,13 @@ func (manager *BackupManager) CopySnapshots(otherManager *BackupManager, snapsho
 
 	LOG_INFO("SNAPSHOT_COPY", "Chunks to copy: %d, to skip: %d, total: %d", len(chunksToCopy), len(chunks) - len(chunksToCopy), len(chunks))
 
-	chunkDownloader := CreateChunkOperator(manager.config, manager.storage, nil, false, downloadingThreads, false)
+	chunkDownloader := CreateChunkOperator(manager.config, manager.storage, nil, false, false, downloadingThreads, false)
 
 	var uploadedBytes int64
 	startTime := time.Now()
 
 	copiedChunks := 0
-	chunkUploader := CreateChunkOperator(otherManager.config, otherManager.storage, nil, false, uploadingThreads, false)
+	chunkUploader := CreateChunkOperator(otherManager.config, otherManager.storage, nil, false, false, uploadingThreads, false)
 	chunkUploader.UploadCompletionFunc =  func(chunk *Chunk, chunkIndex int, skipped bool, chunkSize int, uploadSize int) {
 		action := "Skipped"
 		if !skipped {

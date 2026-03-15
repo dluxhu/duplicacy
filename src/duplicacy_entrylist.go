@@ -550,7 +550,7 @@ func loadIncompleteSnapshot(snapshotID string, cachePath string) *EntryList {
 		}
 	}
 
-	LOG_INFO("INCOMPLETE_LOAD", "Previous incomlete backup contains %d files and %d chunks",
+	LOG_INFO("INCOMPLETE_LOAD", "Previous incomplete backup contains %d files and %d chunks",
 	         entryList.NumberOfEntries, len(entryList.PreservedChunkLengths) + len(entryList.UploadedChunkHashes))
 
 	return entryList
@@ -559,7 +559,7 @@ func loadIncompleteSnapshot(snapshotID string, cachePath string) *EntryList {
 // Delete the two incomplete files.
 func deleteIncompleteSnapshot(cachePath string) {
 
-	for _, file := range []string{"incomplete_snapshot", "incomplete_chunks"} {
+	for _, file := range []string{"incomplete_snapshot", "incomplete_chunks", "incomplete_files"} {
 		filePath := path.Join(cachePath, file)
 		if _, err := os.Stat(filePath); err == nil {
 			err = os.Remove(filePath)

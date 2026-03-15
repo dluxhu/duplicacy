@@ -408,22 +408,21 @@ func CreateGCDStorage(tokenFile string, driveID string, storagePath string, thre
 	if len(driveID) == 0 {
 		driveID = GCDUserDrive
 	} else {
-		driveList, err := drive.NewTeamdrivesService(service).List().Do()
-		if err != nil {
-			return nil, fmt.Errorf("Failed to look up the drive id: %v", err)
-		}
-
-		found := false
-		for _, teamDrive := range driveList.TeamDrives {
-			if teamDrive.Id == driveID || teamDrive.Name == driveID {
-				driveID = teamDrive.Id
-				found = true
-				break
+		// In case the driveID is a name, convert it to an id
+		query := fmt.Sprintf("name='%s'", driveID)
+		driveList, err := drive.NewDrivesService(service).List().Q(query).Do()
+		if err == nil {
+			found := false
+			for _, drive := range driveList.Drives {
+				if drive.Name == driveID {
+					found = true
+					driveID = drive.Id
+					break
+				}
 			}
-		}
-
-		if !found {
-			return nil, fmt.Errorf("%s is not the id or name of a shared drive", driveID)
+			if !found {
+				return nil, fmt.Errorf("%s is not the id or name of a shared drive", driveID)
+			}
 		}
 	}
 
@@ -775,7 +774,7 @@ func (storage *GCDStorage) GetFileInfo(threadIndex int, filePath string) (exist 
 // DownloadFile reads the file at 'filePath' into the chunk.
 func (storage *GCDStorage) DownloadFile(threadIndex int, filePath string, chunk *Chunk) (err error) {
 	// We never download the fossil so there is no need to convert the path
-	fileID, err := storage.getIDFromPath(threadIndex, filePath, false)
+	fileID, err := storage.getIDFromPath(threadIndex, storage.convertFilePath(filePath), false)
 	if err != nil {
 		return err
 	}
