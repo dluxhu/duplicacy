@@ -193,7 +193,7 @@ func (operator *ChunkOperator) Run(threadIndex int, task ChunkTask) {
 		if task.filePath == "" {
 			filePath, exist, _, err := operator.storage.FindChunk(threadIndex, task.chunkID, false)
 			if err != nil {
-				LOG_ERROR("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", task.chunkID, err)
+			LOG_WARN("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", task.chunkID, err)
 				return
 			} else if !exist {
 				if task.operation == ChunkOperationDelete {
@@ -208,7 +208,7 @@ func (operator *ChunkOperator) Run(threadIndex int, task ChunkTask) {
 					operator.fossils = append(operator.fossils, fossilPath)
 					operator.collectionLock.Unlock()
 				} else {
-					LOG_ERROR("CHUNK_FIND", "Chunk %s does not exist in the storage", task.chunkID)
+					LOG_WARN("CHUNK_FIND", "Chunk %s does not exist in the storage", task.chunkID)
 				}
 				return
 			}
@@ -219,9 +219,9 @@ func (operator *ChunkOperator) Run(threadIndex int, task ChunkTask) {
 	if task.operation == ChunkOperationFind {
 		_, exist, _, err := operator.storage.FindChunk(threadIndex, task.chunkID, false)
 		if err != nil {
-			LOG_ERROR("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", task.chunkID, err)
+		LOG_WARN("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", task.chunkID, err)
 		} else if !exist {
-			LOG_ERROR("CHUNK_FIND", "Chunk %s does not exist in the storage", task.chunkID)
+			LOG_WARN("CHUNK_FIND", "Chunk %s does not exist in the storage", task.chunkID)
 		} else {
 			LOG_DEBUG("CHUNK_FIND", "Chunk %s exists in the storage", task.chunkID)
 		}
@@ -262,7 +262,8 @@ func (operator *ChunkOperator) Run(threadIndex int, task ChunkTask) {
 	} else if task.operation == ChunkOperationResurrect {
 		chunkPath, exist, _, err := operator.storage.FindChunk(threadIndex, task.chunkID, false)
 		if err != nil {
-			LOG_ERROR("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", task.chunkID, err)
+		LOG_WARN("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", task.chunkID, err)
+			return
 		}
 
 		if exist {
