@@ -1811,7 +1811,7 @@ func (manager *SnapshotManager) fossilizeChunk(chunkID string, filePath string, 
 func (manager *SnapshotManager) resurrectChunk(fossilPath string, chunkID string) bool {
 	chunkPath, exist, _, err := manager.storage.FindChunk(0, chunkID, false)
 	if err != nil {
-		LOG_ERROR("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", chunkID, err)
+		LOG_WARN("CHUNK_FIND", "Failed to locate the path for the chunk %s: %v", chunkID, err)
 		return false
 	}
 
